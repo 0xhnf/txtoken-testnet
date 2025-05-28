@@ -103,7 +103,7 @@ const sendToken = async (fromWallet, toAddress, tokenContract, amount) => {
 
 // Fungsi untuk meminta input pengguna
 const getUserInput = () => {
-    const tokenAmount = prompt("Masukkan jumlah token yang akan ditransfer (contoh: 212): ");
+    const tokenAmount = prompt("Masukkan jumlah token yang akan ditransfer (contoh: 100): ");
     if (isNaN(tokenAmount) || tokenAmount <= 0) {
         console.error("Jumlah token tidak valid. Harus berupa angka positif.");
         process.exit(1);
