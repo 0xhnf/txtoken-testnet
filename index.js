@@ -45,16 +45,16 @@ const readPrivateKeys = (filePath) => {
 };
 
 // Fungsi untuk membaca alamat dari file
-const readAddressFromFile = (filePath) => {
+const readAddressesFromFile = (filePath) => {
     try {
-        const address = fs.readFileSync(filePath, "utf8")
+        const addresses = fs.readFileSync(filePath, "utf8")
             .split("\n")
             .map(line => line.trim())
             .filter(line => line.length > 0);
         if (!addresses.length) {
             throw new Error("File address.txt kosong atau tidak valid.");
         }
-        return address;
+        return addresses;
     } catch (error) {
         console.error("Gagal membaca file alamat:", error.message);
         process.exit(1);
@@ -75,9 +75,9 @@ const generateRandomWallets = (count) => {
     const addresses = [];
     for (let i = 0; i < count; i++) {
         const wallet = ethers.Wallet.createRandom();
-        address.push(wallet.address);
+        addresses.push(wallet.address);
     }
-    return address;
+    return addresses;
 };
 
 // Fungsi untuk mengirim token ERC-20
@@ -103,7 +103,7 @@ const sendToken = async (fromWallet, toAddress, tokenContract, amount) => {
 
 // Fungsi untuk meminta input pengguna
 const getUserInput = () => {
-    const tokenAmount = prompt("Masukkan jumlah token yang akan ditransfer (contoh: 100): ");
+    const tokenAmount = prompt("Masukkan jumlah token yang akan ditransfer (contoh: 212): ");
     if (isNaN(tokenAmount) || tokenAmount <= 0) {
         console.error("Jumlah token tidak valid. Harus berupa angka positif.");
         process.exit(1);
@@ -138,44 +138,44 @@ const getUserInput = () => {
     const { tokenAmount, walletCount, recipientMode } = getUserInput();
 
     // Siapkan daftar alamat penerima
-    let address = [];
+    let addresses = [];
     if (recipientMode === "tujuan") {
-        const addressFile = "address.txt";
-        address = readAddressFromFile(addressFile);
+        const addressesFile = "address.txt"; // Diubah dari addresses.txt ke address.txt
+        addresses = readAddressesFromFile(addressesFile);
 
         // Validasi jumlah alamat
-        if (address.length < walletCount) {
-            console.error(`Jumlah alamat di address.txt (${address.length}) kurang dari jumlah yang diminta (${walletCount}).`);
+        if (addresses.length < walletCount) {
+            console.error(`Jumlah alamat di address.txt (${addresses.length}) kurang dari jumlah yang diminta (${walletCount}).`);
             process.exit(1);
         }
 
-        // Acak alamat dari addresses.txt
-        address = shuffleArray([...address]);
+        // Acak alamat dari address.txt
+        addresses = shuffleArray([...addresses]);
 
         // Batasi jumlah alamat sesuai input pengguna
         if (addresses.length > walletCount) {
             console.log(`Daftar alamat melebihi ${walletCount}. Hanya akan memproses ${walletCount} alamat pertama.`);
-            addresses = address.slice(0, walletCount);
+            addresses = addresses.slice(0, walletCount);
         }
         if (addresses.length > 150) {
             console.warn("Daftar alamat melebihi 150. Hanya akan memproses 150 alamat pertama.");
-            address = address.slice(0, 150);
+            addresses = addresses.slice(0, 150);
         }
     } else if (recipientMode === "random") {
         // Hasilkan alamat acak sebanyak walletCount
-        address = generateRandomWallets(walletCount);
+        addresses = generateRandomWallets(walletCount);
 
         // Batasi hingga 150 alamat
-        if (address.length > 150) {
+        if (addresses.length > 150) {
             console.warn("Jumlah alamat melebihi 150. Hanya akan memproses 150 alamat pertama.");
-            address = address.slice(0, 150);
+            addresses = addresses.slice(0, 150);
         }
     }
 
     // Tampilkan informasi sebelum transaksi
     console.log("\n=== Informasi Transaksi ===");
     console.log(`Jumlah token yang akan ditransfer per alamat: ${tokenAmount}`);
-    console.log(`Jumlah wallet penerima: ${address.length}`);
+    console.log(`Jumlah wallet penerima: ${addresses.length}`);
     console.log(`Mode penerima: ${recipientMode}${recipientMode === "random" ? " (alamat acak)" : " (acak dari address.txt)"}`);
     console.log("Daftar alamat penerima:");
     addresses.forEach((addr, i) => console.log(`  ${i + 1}. ${addr}`));
@@ -200,8 +200,8 @@ const getUserInput = () => {
 
     console.log(`\nMengirim ${tokenAmount} token ke setiap alamat...`);
 
-    for (let i = 0; i < address.length; i++) {
-        const toAddress = address[i];
+    for (let i = 0; i < addresses.length; i++) {
+        const toAddress = addresses[i];
         const walletIndex = i % wallets.length; // Rotasi antara wallets
 
         if (!ethers.isAddress(toAddress)) {
@@ -212,11 +212,11 @@ const getUserInput = () => {
         const wallet = wallets[walletIndex];
 
         try {
-            console.log(`[${completedTransactions + 1}/${address.length}] Mengirim ${tokenAmount} token dari wallet ${walletIndex} ke ${toAddress}...`);
+            console.log(`[${completedTransactions + 1}/${addresses.length}] Mengirim ${tokenAmount} token dari wallet ${walletIndex} ke ${toAddress}...`);
             const tx = await sendToken(wallet, toAddress, tokenContract, amountToSend);
             completedTransactions++;
             console.log(`Transaksi berhasil. Tx Hash: ${tx.transactionHash || tx.hash}`);
-            console.log(`Status: ${completedTransactions} dari ${address.length} transaksi selesai (${((completedTransactions / address.length) * 100).toFixed(2)}%)`);
+            console.log(`Status: ${completedTransactions} dari ${addresses.length} transaksi selesai (${((completedTransactions / addresses.length) * 100).toFixed(2)}%)`);
 
             // Jeda acak antara 3-7 detik
             const delay = Math.floor(Math.random() * (7000 - 3000 + 1)) + 3000;
@@ -231,7 +231,7 @@ const getUserInput = () => {
     }
 
     console.log("\n=== Ringkasan Transaksi ===");
-    console.log(`Total transaksi yang berhasil: ${completedTransactions} dari ${address.length}`);
+    console.log(`Total transaksi yang berhasil: ${completedTransactions} dari ${addresses.length}`);
     console.log(`Persentase keberhasilan: ${((completedTransactions / addresses.length) * 100).toFixed(2)}%`);
     console.log("==========================");
 })();
