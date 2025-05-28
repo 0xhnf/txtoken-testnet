@@ -1,14 +1,33 @@
 const { ethers } = require("ethers");
-const prompt = require("prompt-sync")({ sigint: true }); // Modul untuk input pengguna
+const prompt = require("prompt-sync")({ sigint: true });
 require("dotenv").config();
 const fs = require("fs");
 
 // Ambil konfigurasi dari .env
 const TOKEN_ADDRESS = process.env.TOKEN_ADDRESS;
-const RPC_URL = process.env.RPC_URL || "https://";
+const RPC_URL = process.env.RPC_URL || "";
 const GAS_TOKEN = process.env.GAS_TOKEN || "ETH";
 
-// Fungsi untuk membaca private keys dari file terpisah
+// Validasi konfigurasi awal
+if (!TOKEN_ADDRESS) {
+    console.error("Error: TOKEN_ADDRESS tidak ditemukan di file .env");
+    process.exit(1);
+}
+if (!RPC_URL) {
+    console.error("Error: RPC_URL tidak ditemukan atau kosong di file .env");
+    process.exit(1);
+}
+
+// Inisialisasi provider di cakupan global
+let provider;
+try {
+    provider = new ethers.JsonRpcProvider(RPC_URL);
+} catch (error) {
+    console.error("Error: Gagal menginisialisasi provider dengan RPC_URL:", error.message);
+    process.exit(1);
+}
+
+// Fungsi untuk membaca private keys dari file
 const readPrivateKeys = (filePath) => {
     try {
         const privateKeys = fs.readFileSync(filePath, "utf8")
@@ -45,12 +64,15 @@ const readAddressesFromFile = (filePath) => {
 // Fungsi untuk mengirim token ERC-20
 const sendToken = async (fromWallet, toAddress, tokenContract, amount) => {
     try {
+        const gasPrice = await provider.getFeeData().then(data => data.gasPrice).catch(err => {
+            throw new Error(`Gagal mendapatkan gasPrice: ${err.message}`);
+        });
         const tx = await tokenContract.connect(fromWallet).transfer(toAddress, amount, {
             gasLimit: 210000,
-            gasPrice: await provider.getFeeData().then(data => data.gasPrice),
+            gasPrice,
         });
-        await tx.wait();
-        return tx;
+        const receipt = await tx.wait();
+        return receipt;
     } catch (error) {
         console.error(`Error saat mengirim token ke ${toAddress}:`, error.message);
         throw error;
@@ -76,14 +98,7 @@ const getUserInput = () => {
 
 // Fungsi utama
 (async () => {
-    // Validasi konfigurasi
-    if (!TOKEN_ADDRESS) {
-        console.error("Harap isi TOKEN_ADDRESS di file .env");
-        process.exit(1);
-    }
-
-    // Inisialisasi provider dan wallet
-    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    // Baca private keys dan inisialisasi wallets
     const privateKeys = readPrivateKeys("privateKeys.txt");
     const wallets = privateKeys.map(privateKey => new ethers.Wallet(privateKey.trim(), provider));
 
@@ -144,7 +159,7 @@ const getUserInput = () => {
             console.log(`[${completedTransactions + 1}/${addresses.length}] Mengirim ${tokenAmount} token dari wallet ${walletIndex} ke ${toAddress}...`);
             const tx = await sendToken(wallet, toAddress, tokenContract, amountToSend);
             completedTransactions++;
-            console.log(`Transaksi berhasil. Tx Hash: ${tx.hash}`);
+            console.log(`Transaksi berhasil. Tx Hash: ${tx.transactionHash}`);
             console.log(`Status: ${completedTransactions} dari ${addresses.length} transaksi selesai (${((completedTransactions / addresses.length) * 100).toFixed(2)}%)`);
 
             // Jeda acak antara 3-7 detik
