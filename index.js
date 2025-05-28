@@ -4,26 +4,40 @@ require("dotenv").config();
 const fs = require("fs");
 
 // Ambil konfigurasi dari .env
-const PRIVATE_KEYS = process.env.PRIVATE_KEYS ? process.env.PRIVATE_KEYS.split(",") : [];
 const TOKEN_ADDRESS = process.env.TOKEN_ADDRESS;
 const RPC_URL = process.env.RPC_URL || "https://";
 const GAS_TOKEN = process.env.GAS_TOKEN || "ETH";
 
-if (!PRIVATE_KEYS.length || !TOKEN_ADDRESS) {
-    console.error("Harap isi PRIVATE_KEYS dan TOKEN_ADDRESS di file .env");
-    process.exit(1);
-}
-
-const provider = new ethers.JsonRpcProvider(RPC_URL);
-const wallets = PRIVATE_KEYS.map(privateKey => new ethers.Wallet(privateKey.trim(), provider));
+// Fungsi untuk membaca private keys dari file terpisah
+const readPrivateKeys = (filePath) => {
+    try {
+        const privateKeys = fs.readFileSync(filePath, "utf8")
+            .split("\n")
+            .map(key => key.trim())
+            .filter(key => key.length > 0);
+        if (!privateKeys.length) {
+            throw new Error("File privateKeys.txt kosong atau tidak valid.");
+        }
+        return privateKeys;
+    } catch (error) {
+        console.error("Gagal membaca file privateKeys.txt:", error.message);
+        process.exit(1);
+    }
+};
 
 // Fungsi untuk membaca alamat dari file
 const readAddressesFromFile = (filePath) => {
     try {
-        const addresses = fs.readFileSync(filePath, "utf8").split("\n").map(line => line.trim()).filter(line => line.length > 0);
+        const addresses = fs.readFileSync(filePath, "utf8")
+            .split("\n")
+            .map(line => line.trim())
+            .filter(line => line.length > 0);
+        if (!addresses.length) {
+            throw new Error("File addresses.txt kosong atau tidak valid.");
+        }
         return addresses;
     } catch (error) {
-        console.error("Gagal membaca file alamat:", error);
+        console.error("Gagal membaca file alamat:", error.message);
         process.exit(1);
     }
 };
@@ -38,7 +52,7 @@ const sendToken = async (fromWallet, toAddress, tokenContract, amount) => {
         await tx.wait();
         return tx;
     } catch (error) {
-        console.error("Error saat mengirim token:", error);
+        console.error(`Error saat mengirim token ke ${toAddress}:`, error.message);
         throw error;
     }
 };
@@ -60,19 +74,27 @@ const getUserInput = () => {
     return { tokenAmount: parseFloat(tokenAmount), walletCount: parseInt(walletCount) };
 };
 
+// Fungsi utama
 (async () => {
-    // Minta input dari pengguna
-    const { tokenAmount, walletCount } = getUserInput();
-
-    const addressesFile = "addresses.txt";
-    let addresses = readAddressesFromFile(addressesFile);
-
-    if (addresses.length === 0) {
-        console.error("Tidak ada alamat yang ditemukan di file.");
+    // Validasi konfigurasi
+    if (!TOKEN_ADDRESS) {
+        console.error("Harap isi TOKEN_ADDRESS di file .env");
         process.exit(1);
     }
 
-    // Batasi jumlah alamat sesuai input pengguna atau maksimum 150
+    // Inisialisasi provider dan wallet
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const privateKeys = readPrivateKeys("privateKeys.txt");
+    const wallets = privateKeys.map(privateKey => new ethers.Wallet(privateKey.trim(), provider));
+
+    // Minta input dari pengguna
+    const { tokenAmount, walletCount } = getUserInput();
+
+    // Baca alamat penerima
+    const addressesFile = "addresses.txt";
+    let addresses = readAddressesFromFile(addressesFile);
+
+    // Validasi jumlah alamat
     if (addresses.length > walletCount) {
         console.log(`Daftar alamat melebihi ${walletCount}. Hanya akan memproses ${walletCount} alamat pertama.`);
         addresses = addresses.slice(0, walletCount);
@@ -80,6 +102,19 @@ const getUserInput = () => {
     if (addresses.length > 150) {
         console.warn("Daftar alamat melebihi 150. Hanya akan memproses 150 alamat pertama.");
         addresses = addresses.slice(0, 150);
+    }
+
+    // Tampilkan informasi sebelum transaksi
+    console.log("\n=== Informasi Transaksi ===");
+    console.log(`Jumlah token yang akan ditransfer per alamat: ${tokenAmount} ${GAS_TOKEN}`);
+    console.log(`Jumlah wallet penerima: ${addresses.length}`);
+    console.log("==========================\n");
+
+    // Konfirmasi sebelum memulai
+    const confirm = prompt("Lanjutkan transaksi? (y/n): ");
+    if (confirm.toLowerCase() !== "y") {
+        console.log("Transaksi dibatalkan.");
+        process.exit(0);
     }
 
     // Inisialisasi kontrak token
@@ -90,10 +125,9 @@ const getUserInput = () => {
     );
 
     const amountToSend = ethers.parseUnits(tokenAmount.toString(), 18); // Konversi jumlah token ke wei
-    let completedTransactions = 0; // Counter untuk transaksi yang selesai
+    let completedTransactions = 0;
 
-    console.log(`Mengirim ${tokenAmount} token ke setiap alamat...`);
-    console.log(`Total alamat yang akan diproses: ${addresses.length}`);
+    console.log(`\nMengirim ${tokenAmount} token ke setiap alamat...`);
 
     for (let i = 0; i < addresses.length; i++) {
         const toAddress = addresses[i];
@@ -109,7 +143,7 @@ const getUserInput = () => {
         try {
             console.log(`[${completedTransactions + 1}/${addresses.length}] Mengirim ${tokenAmount} token dari wallet ${walletIndex} ke ${toAddress}...`);
             const tx = await sendToken(wallet, toAddress, tokenContract, amountToSend);
-            completedTransactions++; // Tambah counter setelah transaksi berhasil
+            completedTransactions++;
             console.log(`Transaksi berhasil. Tx Hash: ${tx.hash}`);
             console.log(`Status: ${completedTransactions} dari ${addresses.length} transaksi selesai (${((completedTransactions / addresses.length) * 100).toFixed(2)}%)`);
 
@@ -118,14 +152,14 @@ const getUserInput = () => {
             console.log(`Menunggu ${delay/1000} detik sebelum transaksi berikutnya...`);
             await new Promise(resolve => setTimeout(resolve, delay));
         } catch (error) {
-            console.error(`Gagal mengirim ke ${toAddress} dari wallet ${walletIndex}:`, error);
-            // Coba lagi setelah jeda 60 detik
+            console.error(`Gagal mengirim ke ${toAddress} dari wallet ${walletIndex}. Mencoba lagi setelah 60 detik...`);
             await new Promise(resolve => setTimeout(resolve, 60000));
             continue;
         }
     }
 
-    console.log("Semua transaksi selesai.");
+    console.log("\n=== Ringkasan Transaksi ===");
     console.log(`Total transaksi yang berhasil: ${completedTransactions} dari ${addresses.length}`);
     console.log(`Persentase keberhasilan: ${((completedTransactions / addresses.length) * 100).toFixed(2)}%`);
+    console.log("==========================");
 })();
