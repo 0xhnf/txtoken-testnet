@@ -45,31 +45,53 @@ const readPrivateKeys = (filePath) => {
 };
 
 // Fungsi untuk membaca alamat dari file
-const readAddressesFromFile = (filePath) => {
+const readAddressFromFile = (filePath) => {
     try {
-        const addresses = fs.readFileSync(filePath, "utf8")
+        const address = fs.readFileSync(filePath, "utf8")
             .split("\n")
             .map(line => line.trim())
             .filter(line => line.length > 0);
         if (!addresses.length) {
-            throw new Error("File addresses.txt kosong atau tidak valid.");
+            throw new Error("File address.txt kosong atau tidak valid.");
         }
-        return addresses;
+        return address;
     } catch (error) {
         console.error("Gagal membaca file alamat:", error.message);
         process.exit(1);
     }
 };
 
+// Fungsi untuk mengacak array (Fisher-Yates shuffle)
+const shuffleArray = (array) => {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+};
+
+// Fungsi untuk menghasilkan alamat wallet acak
+const generateRandomWallets = (count) => {
+    const addresses = [];
+    for (let i = 0; i < count; i++) {
+        const wallet = ethers.Wallet.createRandom();
+        address.push(wallet.address);
+    }
+    return address;
+};
+
 // Fungsi untuk mengirim token ERC-20
 const sendToken = async (fromWallet, toAddress, tokenContract, amount) => {
     try {
+        // Ambil nonce terbaru dari provider
+        const nonce = await provider.getTransactionCount(fromWallet.address, "pending");
         const gasPrice = await provider.getFeeData().then(data => data.gasPrice).catch(err => {
             throw new Error(`Gagal mendapatkan gasPrice: ${err.message}`);
         });
         const tx = await tokenContract.connect(fromWallet).transfer(toAddress, amount, {
             gasLimit: 210000,
             gasPrice,
+            nonce,
         });
         const receipt = await tx.wait();
         return receipt;
@@ -81,7 +103,7 @@ const sendToken = async (fromWallet, toAddress, tokenContract, amount) => {
 
 // Fungsi untuk meminta input pengguna
 const getUserInput = () => {
-    const tokenAmount = prompt("Masukkan jumlah token yang akan ditransfer (contoh: 212): ");
+    const tokenAmount = prompt("Masukkan jumlah token yang akan ditransfer (contoh: 100): ");
     if (isNaN(tokenAmount) || tokenAmount <= 0) {
         console.error("Jumlah token tidak valid. Harus berupa angka positif.");
         process.exit(1);
@@ -93,7 +115,17 @@ const getUserInput = () => {
         process.exit(1);
     }
 
-    return { tokenAmount: parseFloat(tokenAmount), walletCount: parseInt(walletCount) };
+    const recipientMode = prompt("Pilih mode penerima (tujuan/random): ").toLowerCase();
+    if (!["tujuan", "random"].includes(recipientMode)) {
+        console.error("Mode penerima tidak valid. Harus 'tujuan' atau 'random'.");
+        process.exit(1);
+    }
+
+    return {
+        tokenAmount: parseFloat(tokenAmount),
+        walletCount: parseInt(walletCount),
+        recipientMode
+    };
 };
 
 // Fungsi utama
@@ -103,26 +135,50 @@ const getUserInput = () => {
     const wallets = privateKeys.map(privateKey => new ethers.Wallet(privateKey.trim(), provider));
 
     // Minta input dari pengguna
-    const { tokenAmount, walletCount } = getUserInput();
+    const { tokenAmount, walletCount, recipientMode } = getUserInput();
 
-    // Baca alamat penerima
-    const addressesFile = "addresses.txt";
-    let addresses = readAddressesFromFile(addressesFile);
+    // Siapkan daftar alamat penerima
+    let address = [];
+    if (recipientMode === "tujuan") {
+        const addressFile = "address.txt";
+        address = readAddressFromFile(addressFile);
 
-    // Validasi jumlah alamat
-    if (addresses.length > walletCount) {
-        console.log(`Daftar alamat melebihi ${walletCount}. Hanya akan memproses ${walletCount} alamat pertama.`);
-        addresses = addresses.slice(0, walletCount);
-    }
-    if (addresses.length > 150) {
-        console.warn("Daftar alamat melebihi 150. Hanya akan memproses 150 alamat pertama.");
-        addresses = addresses.slice(0, 150);
+        // Validasi jumlah alamat
+        if (address.length < walletCount) {
+            console.error(`Jumlah alamat di address.txt (${address.length}) kurang dari jumlah yang diminta (${walletCount}).`);
+            process.exit(1);
+        }
+
+        // Acak alamat dari addresses.txt
+        address = shuffleArray([...address]);
+
+        // Batasi jumlah alamat sesuai input pengguna
+        if (addresses.length > walletCount) {
+            console.log(`Daftar alamat melebihi ${walletCount}. Hanya akan memproses ${walletCount} alamat pertama.`);
+            addresses = address.slice(0, walletCount);
+        }
+        if (addresses.length > 150) {
+            console.warn("Daftar alamat melebihi 150. Hanya akan memproses 150 alamat pertama.");
+            address = address.slice(0, 150);
+        }
+    } else if (recipientMode === "random") {
+        // Hasilkan alamat acak sebanyak walletCount
+        address = generateRandomWallets(walletCount);
+
+        // Batasi hingga 150 alamat
+        if (address.length > 150) {
+            console.warn("Jumlah alamat melebihi 150. Hanya akan memproses 150 alamat pertama.");
+            address = address.slice(0, 150);
+        }
     }
 
     // Tampilkan informasi sebelum transaksi
     console.log("\n=== Informasi Transaksi ===");
-    console.log(`Jumlah token yang akan ditransfer per alamat: ${tokenAmount} ${GAS_TOKEN}`);
-    console.log(`Jumlah wallet penerima: ${addresses.length}`);
+    console.log(`Jumlah token yang akan ditransfer per alamat: ${tokenAmount}`);
+    console.log(`Jumlah wallet penerima: ${address.length}`);
+    console.log(`Mode penerima: ${recipientMode}${recipientMode === "random" ? " (alamat acak)" : " (acak dari address.txt)"}`);
+    console.log("Daftar alamat penerima:");
+    addresses.forEach((addr, i) => console.log(`  ${i + 1}. ${addr}`));
     console.log("==========================\n");
 
     // Konfirmasi sebelum memulai
@@ -144,8 +200,8 @@ const getUserInput = () => {
 
     console.log(`\nMengirim ${tokenAmount} token ke setiap alamat...`);
 
-    for (let i = 0; i < addresses.length; i++) {
-        const toAddress = addresses[i];
+    for (let i = 0; i < address.length; i++) {
+        const toAddress = address[i];
         const walletIndex = i % wallets.length; // Rotasi antara wallets
 
         if (!ethers.isAddress(toAddress)) {
@@ -156,25 +212,26 @@ const getUserInput = () => {
         const wallet = wallets[walletIndex];
 
         try {
-            console.log(`[${completedTransactions + 1}/${addresses.length}] Mengirim ${tokenAmount} token dari wallet ${walletIndex} ke ${toAddress}...`);
+            console.log(`[${completedTransactions + 1}/${address.length}] Mengirim ${tokenAmount} token dari wallet ${walletIndex} ke ${toAddress}...`);
             const tx = await sendToken(wallet, toAddress, tokenContract, amountToSend);
             completedTransactions++;
-            console.log(`Transaksi berhasil. Tx Hash: ${tx.transactionHash}`);
-            console.log(`Status: ${completedTransactions} dari ${addresses.length} transaksi selesai (${((completedTransactions / addresses.length) * 100).toFixed(2)}%)`);
+            console.log(`Transaksi berhasil. Tx Hash: ${tx.transactionHash || tx.hash}`);
+            console.log(`Status: ${completedTransactions} dari ${address.length} transaksi selesai (${((completedTransactions / address.length) * 100).toFixed(2)}%)`);
 
             // Jeda acak antara 3-7 detik
             const delay = Math.floor(Math.random() * (7000 - 3000 + 1)) + 3000;
             console.log(`Menunggu ${delay/1000} detik sebelum transaksi berikutnya...`);
             await new Promise(resolve => setTimeout(resolve, delay));
         } catch (error) {
-            console.error(`Gagal mengirim ke ${toAddress} dari wallet ${walletIndex}. Mencoba lagi setelah 60 detik...`);
+            console.error(`Gagal mengirim ke ${toAddress} dari wallet ${walletIndex}:`, error.message);
+            console.error(`Mencoba lagi setelah 60 detik...`);
             await new Promise(resolve => setTimeout(resolve, 60000));
             continue;
         }
     }
 
     console.log("\n=== Ringkasan Transaksi ===");
-    console.log(`Total transaksi yang berhasil: ${completedTransactions} dari ${addresses.length}`);
+    console.log(`Total transaksi yang berhasil: ${completedTransactions} dari ${address.length}`);
     console.log(`Persentase keberhasilan: ${((completedTransactions / addresses.length) * 100).toFixed(2)}%`);
     console.log("==========================");
 })();
