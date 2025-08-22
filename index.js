@@ -157,18 +157,18 @@ const getUserInput = () => {
             console.log(`Daftar alamat melebihi ${walletCount}. Hanya akan memproses ${walletCount} alamat pertama.`);
             addresses = addresses.slice(0, walletCount);
         }
-        if (addresses.length > 150) {
-            console.warn("Daftar alamat melebihi 150. Hanya akan memproses 150 alamat pertama.");
-            addresses = addresses.slice(0, 150);
+        if (addresses.length > 15000) {
+            console.warn("Daftar alamat melebihi 15000. Hanya akan memproses 15000 alamat pertama.");
+            addresses = addresses.slice(0, 15000);
         }
     } else if (recipientMode === "random") {
         // Hasilkan alamat acak sebanyak walletCount
         addresses = generateRandomWallets(walletCount);
 
         // Batasi hingga 150 alamat
-        if (addresses.length > 150) {
-            console.warn("Jumlah alamat melebihi 150. Hanya akan memproses 150 alamat pertama.");
-            addresses = addresses.slice(0, 150);
+        if (addresses.length > 15000) {
+            console.warn("Jumlah alamat melebihi 15000. Hanya akan memproses 15000 alamat pertama.");
+            addresses = addresses.slice(0, 15000);
         }
     }
 
@@ -219,7 +219,7 @@ const getUserInput = () => {
             console.log(`Status: ${completedTransactions} dari ${addresses.length} transaksi selesai (${((completedTransactions / addresses.length) * 100).toFixed(2)}%)`);
 
             // Jeda acak antara 3-7 detik
-            const delay = Math.floor(Math.random() * (7000 - 3000 + 1)) + 3000;
+            const delay = Math.floor(Math.random() * (5000 - 3000 + 1)) + 3000;
             console.log(`Menunggu ${delay/1000} detik sebelum transaksi berikutnya...`);
             await new Promise(resolve => setTimeout(resolve, delay));
         } catch (error) {
